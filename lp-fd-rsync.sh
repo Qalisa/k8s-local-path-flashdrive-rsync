@@ -42,6 +42,9 @@ mayTrimLog() {
 
 log_message "Starting Odoo backup script..."
 
+#
+mayTrimLog
+
 # Check for required binaries
 print_message "Checking for required binaries..."
 for bin in "${REQUIRED_BINS[@]}"; do
@@ -138,8 +141,6 @@ if [ "$USB_MOUNT" = "$MOUNT_POINT" ]; then
         exit 1
     fi
 fi
-
-mayTrimLog
 
 print_message "Backup script completed"
 exit 0
