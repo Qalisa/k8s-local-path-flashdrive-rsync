@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define readonly variables for maintainability
-readonly REQUIRED_BINS=("find" "lsblk" "grep" "awk" "rsync" "wc" "tail" "mount" "umount" "mkdir" "df")
+readonly REQUIRED_BINS=("find" "lsblk" "grep" "sed" "rsync" "wc" "tail" "mount" "umount" "mkdir" "df")
 readonly SCRIPT_NAME="lp-fd-rsync"
 readonly SOURCE_PATH="/var/lib/rancher/k3s/storage/"
 readonly SOURCE_FOLDER_NAME="*odoo-community_local-backups*"
@@ -32,10 +32,10 @@ handle_error() {
 # Function to get USB stats (label, size, available)
 get_usb_stats() {
     local device="$1" mount_point="$2"
-    USB_LABEL=$(lsblk -o NAME,LABEL -l | grep "^$device" | awk '{print $2}')
+    USB_LABEL=$(lsblk -o NAME,LABEL -P | grep "NAME=\"$device\"" | sed -n 's/.*LABEL="\([^"]*\)".*/\1/p')
     USB_SIZE=$(df -h "$mount_point" | tail -n 1 | awk '{print $2}')
     USB_AVAILABLE=$(df -h "$mount_point" | tail -n 1 | awk '{print $4}')
-    log_message "-> Found USB device: /dev/$device, Label: $(bracket "$USB_LABEL"), Size: $(bracket "$USB_SIZE"), Available: $(bracket "$USB_AVAILABLE"), mounted at: $(bracket "$mount_point")"
+    log_message "-> Looking at USB device: /dev/$device, Label: $(bracket "$USB_LABEL"), Size: $(bracket "$USB_SIZE"), Available: $(bracket "$USB_AVAILABLE"), mounted at: $(bracket "$mount_point")"
 }
 
 # Check and trim log file if it exceeds MAX_LOG_LINES
@@ -67,11 +67,13 @@ log_message "-> Found source folder: $(bracket "$SOURCE_DIR")"
 
 # Step 2: Find and mount USB drive
 log_message "Searching for USB drive with volume containing '$USB_LABEL_PATTERN1' and '$USB_LABEL_PATTERN2'..."
-USB_DEVICE=$(lsblk -o NAME,LABEL -l | grep -i "$USB_LABEL_PATTERN1" | grep -i "$USB_LABEL_PATTERN2" | head -n 1 | awk '{print $1}')
+USB_DEVICE=$(lsblk -o NAME,LABEL -P | grep -i "LABEL=.*$USB_LABEL_PATTERN1" | grep -i "LABEL=.*$USB_LABEL_PATTERN2" | sed -n 's/.*NAME="\([^"]*\)".*/\1/p' | head -n 1)
 [ -z "$USB_DEVICE" ] && handle_error "No USB drive with volume containing both '$USB_LABEL_PATTERN1' and '$USB_LABEL_PATTERN2' found"
 
+log_message "-> Found in [/dev/$USB_DEVICE] !"
+
 # Check if USB is already mounted
-USB_MOUNT=$(lsblk -o NAME,MOUNTPOINT -l | grep "^$USB_DEVICE" | awk '{print $2}')
+USB_MOUNT=$(lsblk -o NAME,MOUNTPOINT -P | grep "NAME=\"$USB_DEVICE\"" | sed -n 's/.*MOUNTPOINT="\([^"]*\)".*/\1/p')
 if [ -n "$USB_MOUNT" ]; then
     get_usb_stats "$USB_DEVICE" "$USB_MOUNT"
 else
