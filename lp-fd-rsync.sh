@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # Define readonly variables for maintainability
+readonly REQUIRED_BINS=("find" "lsblk" "grep" "awk" "rsync" "wc" "tail" "mount" "umount" "mkdir" "df")
 readonly SCRIPT_NAME="lp-fd-rsync"
 readonly SOURCE_PATH="/var/lib/rancher/k3s/storage/"
 readonly SOURCE_FOLDER_NAME="*odoo-community_local-backups*"
@@ -53,7 +54,6 @@ log_message "Starting Odoo backup script..."
 
 # Check for required binaries
 log_message "Checking for required binaries..."
-REQUIRED_BINS=("find" "lsblk" "grep" "awk" "rsync" "wc" "tail" "mount" "umount" "mkdir" "df")
 for bin in "${REQUIRED_BINS[@]}"; do
     command -v "$bin" &> /dev/null || handle_error "Required binary $(bracket "$bin") not found; please install it"
     log_message "-> Found binary: $(bracket "$bin")"
