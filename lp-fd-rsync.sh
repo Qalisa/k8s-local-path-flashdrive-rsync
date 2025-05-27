@@ -8,7 +8,8 @@ readonly USB_LABEL_PATTERN1="odoo"
 readonly USB_LABEL_PATTERN2="backup"
 readonly MAX_LOG_LINES=10000
 readonly LOG_FILE="/var/log/odoo_backup.log"
-readonly MOUNT_POINT="/media/usb/odoo_backup_target"
+readonly MOUNT_POINT="/mnt/odoo_backup"
+readonly REQUIRED_BINS=("find" "lsblk" "grep" "awk" "rsync" "wc" "tail" "mount" "umount" "mkdir" "df")
 
 # Function to log messages
 log_message() {
@@ -21,23 +22,28 @@ print_message() {
     echo "[$SCRIPT_NAME] $1"
 }
 
-# Check and trim log file if it exceeds MAX_LOG_LINES
-if [ -f "$LOG_FILE" ]; then
-    LINE_COUNT=$(wc -l < "$LOG_FILE")
-    if [ "$LINE_COUNT" -gt "$MAX_LOG_LINES" ]; then
-        print_message "Log file exceeds $MAX_LOG_LINES lines ($LINE_COUNT lines), trimming old entries"
-        tail -n "$MAX_LOG_LINES" "$LOG_FILE" > "${LOG_FILE}.tmp" && mv "${LOG_FILE}.tmp" "$LOG_FILE"
-        print_message "Log file trimmed to last $MAX_LOG_LINES lines"
+mayTrimLog() {
+    # Check and trim log file if it exceeds MAX_LOG_LINES
+    if [ -f "$LOG_FILE" ]; then
+        LINE_COUNT=$(wc -l < "$LOG_FILE")
+        if [ "$LINE_COUNT" -gt "$MAX_LOG_LINES" ]; then
+            print_message "Log file exceeds $MAX_LOG_LINES lines ($LINE_COUNT lines), trimming old entries"
+            tail -n "$MAX_LOG_LINES" "$LOG_FILE" > "${LOG_FILE}.tmp" && mv "${LOG_FILE}.tmp" "$LOG_FILE"
+            print_message "Log file trimmed to last $MAX_LOG_LINES lines"
+        fi
+    else
+        > "$LOG_FILE"  # Create empty log file if it doesn't exist
     fi
-else
-    > "$LOG_FILE"  # Create empty log file if it doesn't exist
-fi
+}
+
+##
+##
+##
 
 log_message "Starting Odoo backup script..."
 
 # Check for required binaries
 print_message "Checking for required binaries..."
-REQUIRED_BINS=("find" "lsblk" "grep" "awk" "rsync" "wc" "tail" "mount" "umount" "mkdir")
 for bin in "${REQUIRED_BINS[@]}"; do
     if ! command -v "$bin" &> /dev/null; then
         log_message "ERROR: Required binary [$bin] not found; please install it."
@@ -60,19 +66,20 @@ fi
 
 # Step 2: Find USB drive with volume containing both 'odoo' and 'backup' (case insensitive)
 print_message "Searching for USB drive with volume containing '$USB_LABEL_PATTERN1' and '$USB_LABEL_PATTERN2'..."
-USB_DEVICE=$(lsblk -o NAME,MOUNTPOINT,LABEL -l | grep -i "$USB_LABEL_PATTERN1" | grep -i "$USB_LABEL_PATTERN2" | head -n 1 | awk '{print $1}')
-
+USB_INFO=$(lsblk -o NAME,MOUNTPOINT,LABEL,SIZE -b -l | grep -i "$USB_LABEL_PATTERN1" | grep -i "$USB_LABEL_PATTERN2" | head -n 1)
+USB_DEVICE=$(echo "$USB_INFO" | awk '{print $1}')
+USB_LABEL=$(echo "$USB_INFO" | awk '{print $3}')
+USB_SIZE=$(echo "$USB_INFO" | awk '{print $4}' | numfmt --to=iec --suffix=B)
 if [ -z "$USB_DEVICE" ]; then
     log_message "ERROR: No USB drive with volume containing both '$USB_LABEL_PATTERN1' and '$USB_LABEL_PATTERN2' found"
     exit 1
-else
-    log_message "-> Found USB device: /dev/$USB_DEVICE"
 fi
 
 # Check if USB is already mounted
 USB_MOUNT=$(lsblk -o NAME,MOUNTPOINT -l | grep "^$USB_DEVICE" | awk '{print $2}')
 if [ -n "$USB_MOUNT" ]; then
-    log_message "-> USB device /dev/$USB_DEVICE is already mounted at: $USB_MOUNT"
+    USB_AVAILABLE=$(df -h "$USB_MOUNT" | tail -n 1 | awk '{print $4}')
+    log_message "-> Found USB device: /dev/$USB_DEVICE, Label: [$USB_LABEL], Size: [$USB_SIZE], Available: [$USB_AVAILABLE], already mounted at: [$USB_MOUNT]"
 else
     # Create mount point if it doesn't exist
     if [ ! -d "$MOUNT_POINT" ]; then
@@ -90,7 +97,8 @@ else
     print_message "Mounting USB device /dev/$USB_DEVICE to [$MOUNT_POINT]..."
     mount "/dev/$USB_DEVICE" "$MOUNT_POINT"
     if [ $? -eq 0 ]; then
-        log_message "-> USB device /dev/$USB_DEVICE mounted successfully at [$MOUNT_POINT]"
+        USB_AVAILABLE=$(df -h "$MOUNT_POINT" | tail -n 1 | awk '{print $4}')
+        log_message "-> USB device: /dev/$USB_DEVICE, Label: [$USB_LABEL], Size: [$USB_SIZE], Available: [$USB_AVAILABLE], mounted successfully at [$MOUNT_POINT]"
         USB_MOUNT="$MOUNT_POINT"
     else
         log_message "ERROR: Failed to mount USB device /dev/$USB_DEVICE to [$MOUNT_POINT]"
@@ -130,6 +138,8 @@ if [ "$USB_MOUNT" = "$MOUNT_POINT" ]; then
         exit 1
     fi
 fi
+
+mayTrimLog
 
 print_message "Backup script completed"
 exit 0
