@@ -8,7 +8,7 @@ readonly USB_LABEL_PATTERN1="odoo"
 readonly USB_LABEL_PATTERN2="backup"
 readonly MAX_LOG_LINES=10000
 readonly LOG_FILE="/var/log/odoo_backup.log"
-
+readonly MOUNT_POINT="/media/usb/odoo_backup_target"
 
 # Function to log messages
 log_message() {
@@ -20,21 +20,6 @@ log_message() {
 print_message() {
     echo "[$SCRIPT_NAME] $1"
 }
-
-#
-log_message "Starting Odoo backup script..."
-
-# Check for required binaries
-print_message "Checking for required binaries..."
-REQUIRED_BINS=("find" "lsblk" "grep" "awk" "rsync" "wc" "tail")
-for bin in "${REQUIRED_BINS[@]}"; do
-    if ! command -v "$bin" &> /dev/null; then
-        log_message "ERROR: Required binary [$bin] not found; please install it."
-        exit 1
-    else
-        print_message "-> Found binary: [$bin]"
-    fi
-done
 
 # Check and trim log file if it exceeds MAX_LOG_LINES
 if [ -f "$LOG_FILE" ]; then
@@ -48,12 +33,26 @@ else
     > "$LOG_FILE"  # Create empty log file if it doesn't exist
 fi
 
+log_message "Starting Odoo backup script..."
+
+# Check for required binaries
+print_message "Checking for required binaries..."
+REQUIRED_BINS=("find" "lsblk" "grep" "awk" "rsync" "wc" "tail" "mount" "umount" "mkdir")
+for bin in "${REQUIRED_BINS[@]}"; do
+    if ! command -v "$bin" &> /dev/null; then
+        log_message "ERROR: Required binary [$bin] not found; please install it."
+        exit 1
+    else
+        print_message "-> Found binary: [$bin]"
+    fi
+done
+
 # Step 1: Find folder containing odoo-community_local-backups
-print_message "Searching for [$SOURCE_FOLDER_NAME] folder in [$SOURCE_PATH]..."
+print_message "Searching for pattern [$SOURCE_FOLDER_NAME] folder in [$SOURCE_PATH]..."
 SOURCE_DIR=$(find "$SOURCE_PATH" -type d -name "$SOURCE_FOLDER_NAME" | head -n 1)
 
 if [ -z "$SOURCE_DIR" ]; then
-    log_message "ERROR: No folder containing [$SOURCE_FOLDER_NAME] found"
+    log_message "ERROR: No folder inside [$SOURCE_PATH] with pattern [$SOURCE_FOLDER_NAME] found"
     exit 1
 else
     log_message "-> Found source folder: [$SOURCE_DIR]"
@@ -61,13 +60,42 @@ fi
 
 # Step 2: Find USB drive with volume containing both 'odoo' and 'backup' (case insensitive)
 print_message "Searching for USB drive with volume containing '$USB_LABEL_PATTERN1' and '$USB_LABEL_PATTERN2'..."
-USB_MOUNT=$(lsblk -o NAME,MOUNTPOINT,LABEL -l | grep -i "$USB_LABEL_PATTERN1" | grep -i "$USB_LABEL_PATTERN2" | head -n 1 | awk '{print $2}')
+USB_DEVICE=$(lsblk -o NAME,MOUNTPOINT,LABEL -l | grep -i "$USB_LABEL_PATTERN1" | grep -i "$USB_LABEL_PATTERN2" | head -n 1 | awk '{print $1}')
 
-if [ -z "$USB_MOUNT" ]; then
+if [ -z "$USB_DEVICE" ]; then
     log_message "ERROR: No USB drive with volume containing both '$USB_LABEL_PATTERN1' and '$USB_LABEL_PATTERN2' found"
     exit 1
 else
-    log_message "-> Found USB volume mounted containing both '$USB_LABEL_PATTERN1' and '$USB_LABEL_PATTERN2' at: $USB_MOUNT"
+    log_message "-> Found USB device: /dev/$USB_DEVICE"
+fi
+
+# Check if USB is already mounted
+USB_MOUNT=$(lsblk -o NAME,MOUNTPOINT -l | grep "^$USB_DEVICE" | awk '{print $2}')
+if [ -n "$USB_MOUNT" ]; then
+    log_message "-> USB device /dev/$USB_DEVICE is already mounted at: $USB_MOUNT"
+else
+    # Create mount point if it doesn't exist
+    if [ ! -d "$MOUNT_POINT" ]; then
+        print_message "Creating mount point [$MOUNT_POINT]..."
+        mkdir -p "$MOUNT_POINT"
+        if [ $? -eq 0 ]; then
+            log_message "-> Mount point [$MOUNT_POINT] created successfully"
+        else
+            log_message "ERROR: Failed to create mount point [$MOUNT_POINT]"
+            exit 1
+        fi
+    fi
+
+    # Mount the USB device
+    print_message "Mounting USB device /dev/$USB_DEVICE to [$MOUNT_POINT]..."
+    mount "/dev/$USB_DEVICE" "$MOUNT_POINT"
+    if [ $? -eq 0 ]; then
+        log_message "-> USB device /dev/$USB_DEVICE mounted successfully at [$MOUNT_POINT]"
+        USB_MOUNT="$MOUNT_POINT"
+    else
+        log_message "ERROR: Failed to mount USB device /dev/$USB_DEVICE to [$MOUNT_POINT]"
+        exit 1
+    fi
 fi
 
 # Step 3: Perform rsync
@@ -78,7 +106,29 @@ if [ $? -eq 0 ]; then
     log_message "Rsync completed successfully"
 else
     log_message "ERROR: Rsync failed"
+    # Attempt to unmount before exiting
+    if [ "$USB_MOUNT" = "$MOUNT_POINT" ]; then
+        print_message "Unmounting USB device from [$MOUNT_POINT] due to rsync failure..."
+        umount "$MOUNT_POINT"
+        if [ $? -eq 0 ]; then
+            log_message "-> USB device unmounted successfully from [$MOUNT_POINT]"
+        else
+            log_message "ERROR: Failed to unmount USB device from [$MOUNT_POINT]"
+        fi
+    fi
     exit 1
+fi
+
+# Step 4: Unmount USB if we mounted it
+if [ "$USB_MOUNT" = "$MOUNT_POINT" ]; then
+    print_message "Unmounting USB device from [$MOUNT_POINT]..."
+    umount "$MOUNT_POINT"
+    if [ $? -eq 0 ]; then
+        log_message "-> USB device unmounted successfully from [$MOUNT_POINT]"
+    else
+        log_message "ERROR: Failed to unmount USB device from [$MOUNT_POINT]"
+        exit 1
+    fi
 fi
 
 print_message "Backup script completed"
