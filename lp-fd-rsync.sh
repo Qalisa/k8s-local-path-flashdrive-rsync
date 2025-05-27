@@ -7,20 +7,22 @@ readonly SOURCE_FOLDER_NAME="*odoo-community_local-backups*"
 readonly USB_LABEL_PATTERN1="odoo"
 readonly USB_LABEL_PATTERN2="backup"
 readonly MAX_LOG_LINES=10000
+readonly LOG_FILE="/var/log/odoo_backup.log"
 
-# Set log file
-LOG_FILE="/var/log/odoo_backup.log"
-TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 
 # Function to log messages
 log_message() {
+    TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
     echo "[$TIMESTAMP] $1" >> "$LOG_FILE"
-    print_message $1
+    print_message "$1"
 }
 
 print_message() {
     echo "[$SCRIPT_NAME] $1"
 }
+
+#
+log_message "Starting Odoo backup script..."
 
 # Check for required binaries
 print_message "Checking for required binaries..."
@@ -45,8 +47,6 @@ if [ -f "$LOG_FILE" ]; then
 else
     > "$LOG_FILE"  # Create empty log file if it doesn't exist
 fi
-
-print_message "Starting Odoo backup script..."
 
 # Step 1: Find folder containing odoo-community_local-backups
 print_message "Searching for [$SOURCE_FOLDER_NAME] folder in [$SOURCE_PATH]..."
