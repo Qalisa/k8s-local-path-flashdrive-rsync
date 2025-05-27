@@ -1,15 +1,21 @@
 #!/bin/bash
 
-# Define readonly variables for maintainability
-readonly REQUIRED_BINS=("find" "lsblk" "grep" "sed" "rsync" "wc" "tail" "mount" "umount" "mkdir" "df")
-readonly SCRIPT_NAME="lp-fd-rsync"
+# Configurable
 readonly SOURCE_PATH="/var/lib/rancher/k3s/storage/"
 readonly SOURCE_FOLDER_NAME="*odoo-community_local-backups*"
 readonly USB_LABEL_PATTERN1="odoo"
 readonly USB_LABEL_PATTERN2="backup"
+
+# Define readonly variables for maintainability
+readonly REQUIRED_BINS=("find" "lsblk" "grep" "sed" "rsync" "wc" "tail" "mount" "umount" "mkdir" "df")
+readonly SCRIPT_NAME="lp-fd-rsync"
 readonly MAX_LOG_LINES=10000
-readonly LOG_FILE="/var/log/odoo_backup.log"
-readonly MOUNT_POINT="/mnt/odoo_backup"
+readonly LOG_FILE="/var/log/$SCRIPT_NAME.log"
+readonly MOUNT_POINT="/mnt/$SCRIPT_NAME/odoo_backup"
+
+##
+##
+##
 
 # Function to wrap text in brackets
 bracket() {
@@ -38,6 +44,10 @@ get_usb_stats() {
     log_message "-> Looking at USB device: /dev/$device, Label: $(bracket "$USB_LABEL"), Size: $(bracket "$USB_SIZE"), Available: $(bracket "$USB_AVAILABLE"), mounted at: $(bracket "$mount_point")"
 }
 
+##
+##
+##
+
 # Check and trim log file if it exceeds MAX_LOG_LINES
 if [ -f "$LOG_FILE" ]; then
     LINE_COUNT=$(wc -l < "$LOG_FILE")
@@ -49,6 +59,10 @@ if [ -f "$LOG_FILE" ]; then
 else
     > "$LOG_FILE" || handle_error "Failed to create log file"
 fi
+
+##
+##
+##
 
 log_message "Starting Odoo backup script..."
 
