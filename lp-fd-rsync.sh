@@ -1,5 +1,52 @@
 #!/bin/bash
 
+# ------------------------------------------------------------------------------
+# Script Name: lp-fd-rsync
+# Description:
+#   This script automates the backup of Odoo Community local backup folders 
+#   to a connected USB storage device. It performs the following steps:
+#
+#   1. Validates the presence of required command-line utilities.
+#   2. Searches for the source backup directory matching a pattern inside
+#      a specified storage path (commonly used by k3s for persistent volumes).
+#   3. Detects a USB drive based on label patterns (e.g., containing 'odoo' and 'backup').
+#   4. Mounts the USB device if not already mounted.
+#   5. Logs USB device information including label, size, and available space.
+#   6. Uses `rsync` to synchronize the backup folder to the USB drive.
+#   7. Unmounts the USB device after the transfer, if it was mounted by the script.
+#   8. Maintains a log file and trims it if it grows too large (to the last 10,000 lines).
+#
+#   This script is intended to be run on systems where:
+#     - Odoo Community Edition backups are stored inside k3s volumes
+#     - USB drives are periodically connected to retrieve those backups
+#
+# Configuration:
+#   - SOURCE_PATH: Root directory to search for backup folders
+#   - SOURCE_FOLDER_NAME: Folder name pattern to locate Odoo backups
+#   - USB_LABEL_PATTERN1/2: Case-insensitive labels used to identify the correct USB device
+#   - LOG_FILE: Path to the log file used for recording operations and errors
+#   - MOUNT_POINT: Mount location used if the USB device isn't already mounted
+#
+# Requirements:
+#   - Binaries: find, lsblk, grep, sed, rsync, wc, tail, mount, umount, mkdir, df
+#   - Run with root privileges or permissions to mount/unmount devices
+#
+# Logging:
+#   - Logs are written to /var/log/lp-fd-rsync.log
+#   - Log size is trimmed to 10,000 lines to prevent bloat
+#
+# Exit Codes:
+#   - 0: Success
+#   - 1: Failure (detailed message logged)
+#
+# Usage:
+#   sudo ./lp-fd-rsync.sh
+#
+# Author: Qalisa
+# Version: 1.0.0
+# ------------------------------------------------------------------------------
+
+
 # Configurable
 readonly SOURCE_PATH="/var/lib/rancher/k3s/storage/"
 readonly SOURCE_FOLDER_NAME="*odoo-community_local-backups*"
